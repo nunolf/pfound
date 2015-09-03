@@ -1,0 +1,8 @@
+while producing snapshots with labels, the program
+ppmlabel needs to read the file rgb.txt from
+default places:
+
+ppmlabel: can't open color names dictionary file named /usr/lib/X11/rgb.txt,
+/usr/openwin/lib/rgb.txt, or /usr/X11R6/lib/X11/rgb.txt and En
+vironment variable RGBDEF not set.
+Set RGBDEF to the pathname of your rgb.txt file or don't use color names.

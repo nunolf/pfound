@@ -1,0 +1,4 @@
+package require exectool
+puts $env(PATH)
+::ExecTool::find naccess
+::ExecTool::find gracebat

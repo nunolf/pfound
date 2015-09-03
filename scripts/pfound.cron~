@@ -1,0 +1,197 @@
+################################################################################
+## pfound.cron																  ##
+################################################################################
+## How is it called:														  ##
+## VMD=/opt/bin/vmd															  ##
+## PFOUND=/home/nuno/pfound													  ##
+## * * * * * $VMD -dispdev text -startup $PFOUND/scripts/vmd.rc -args $PFOUND ##
+##                -eofexit < $PFOUND/scripts/pfound.cron > $PFOUND/cron.log   ##
+##									      ##
+## Survey:								      ##
+## After a successfull upload of one or more trajectories to pfound data      ##
+## repository (on matrix machine), the datawarehouse will copy the relevant   ##
+## files to a working directory (/data/pfound/ = $pfound) on behemoth,        ##
+## $pfound/$toProcessPath.						      ##
+##									      ##
+## The cron daemon executes pfound.cron every hour (to be discussed) in order ##
+## to check if there is data to be processed. If there is, then eligible      ##
+## $pfound/$toProcessPath/$Dir data will be moved to 			      ##
+## $pfound/$processedPath/$Dir.  					      ##
+##									      ##
+## VMD will start then to process each simID $Dir, calculating some properties##
+## defined on a procedure ($pfound/scripts/start.vmd file), external to the   ##
+## main package library ($pfound/lib/pfoundBasicX.Y/pfoundBasic.tcl). The     ##
+## results will then be stored on $pfound/$processedPath/$Dir.		      ##
+##									      ##
+## If an error condition is returned from start.vmd while working	      ##
+## with simId $Dir, then an abort signal is written to $pfound/$logFile.      ##
+## Otherwise, a successfull condition is written.			      ##
+##  									      ##
+## A $cronFile is also written, to catch the progress of the		      ##
+## the script and/or any error that is caught in the middle.		      ##
+################################################################################
+## File location: $pfound/scripts					      ##
+################################################################################
+## Author: Nuno Loureiro-Ferreira / nunolf (at) ci uc pt		      ##
+##									      ##
+## Acknowledgements: John Stone / vmd-l (at) ks uiuc edu		      ##
+##									      ##
+## 11 Dez 2006 file version 1.0						      ##
+################################################################################
+## 2do:									      ##
+## 									      ##
+## After changing the file permissions, the DW will start to import the       ##
+## properties/files calculated (checks if simid.success is on $pfound/logs dir##
+## After the import, the DW should give some kind of warning (ex. write a file##
+## like simid.imported). A cronjob will be running checking for the existence ##
+## of these files, and once finds one, it deletes the corresponding dir under ##
+## $pfound/processed dir. This is still not implemented, just an idea. In this##
+## case, I do not see the point of changing the file permissions of the	      ##
+## produced files. The only thing to do, is that the DW has write permissions ##
+## on a certain directory to write that file warning. I've commented the code ##
+## that deals with changing the file permissions (at the end of this script). ##
+################################################################################
+
+################################################################################
+# Setting up working directories and running scripts			       #
+################################################################################
+
+# Pfound working dir
+set workdirPath [lindex $argv 0]
+
+# DW stores here the raw data
+set toProcessPath $workdirPath/to-process
+
+# VMD processing dir
+set processedPath $workdirPath/processed
+
+# Standby dir if an error occurs during raw data processing
+set notProcessedPath $workdirPath/not-processed
+
+# History log files
+set histPath $workdirPath/history
+
+# VMD status on simulation simid
+# DW checks for $simid.success or $simid.abort files here
+set logsPath $workdirPath/logs
+
+# Repository of pfound needed scripts
+set scriptsPath $workdirPath/scripts
+
+# ::pfoundBasic package
+set libPath $workdirPath/lib
+
+# List dirs and scripts to check for their existence
+set workdirList [list $toProcessPath $processedPath $notProcessedPath $logsPath\
+		$scriptsPath $libPath $histPath]
+set scriptsList [list start.vmd top2psf.pl vmd.rc]
+
+# History log files
+set logHist  status.history ;# simId vs aborted || successfull condition
+set cronHist cron.history   ;# full debug log
+set errHist errors.history  ;# Tcl Trace errors
+
+# Sleeping time between file size checkings
+set nSeconds 1
+
+# Set global temp directory
+global tmpdir
+set tmpdir "/tmp"
+
+################################################################################
+# Update auto_path and load needed packages				       #
+################################################################################
+
+lappend auto_path $libPath
+package require pfoundBasic 1.0
+package require pfoundMultimedia 1.0
+
+################################################################################
+# Checking for data to be processed					       #
+################################################################################
+
+# Checks if working directories/scripts are present
+# The first time pfound.cron is called, needed directories will be created
+# Since this check needs a lot of procedures (higher the error probability)
+# think there's a clever way of doing this. Probably I do not need this crap!!!
+set cDir [::pfoundBasic::createSomeDirs]
+set logFile [open ${histPath}/$logHist a+]
+set cronFile [open ${histPath}/$cronHist a+]
+set errFile [open ${histPath}/$errHist a+]
+puts $cronFile "###---###\nCronjob started at [::pfoundBasic::timeFormat]"
+puts $cronFile "HOSTNAME: [info hostname]\nUSER: $tcl_platform(user)"
+puts $cronFile "\n\[ Checking directories/scripts \]"
+if {$cDir == 1} {puts $cronFile "Created needed working directories"}
+::pfoundBasic::checkScripts $scriptsPath
+
+# List simId files to be processed and creates simId dirs
+puts $cronFile "\n\[ Checking simID's to process \]"
+::pfoundBasic::checkSims
+puts $cronFile "\n\[ Testing simID's \]"
+set workSims [::pfoundBasic::createSimDir]
+puts $cronFile "\nSimId's to proceed: $workSims"
+
+################################################################################
+# Calculation of properties on simId $sim									   #
+################################################################################
+
+foreach sim $workSims {
+    puts $cronFile "\n\[ Checking file extensions for simId $sim \]"
+
+    # get $sim file extensions
+    set fileTags [::pfoundBasic::getExt $sim]
+    foreach item $fileTags {
+		# checks extension type and ...
+		::pfoundBasic::extId $sim $item
+    }
+
+    # ... must have a top & traj
+    set extList  [::pfoundBasic::extUniq]
+
+    if {$extList != "notok"} {    
+        set topType  [lindex $extList 0]
+		set trajType [lindex $extList 1]
+		puts $cronFile "\n\[ VMD executation stat on simId $sim \]"
+
+		# VMD is going to read files by their extension; this must change in
+		# in the near future. This sourcing will call and execute the procedures
+		# defined in start.vmd
+		source $scriptsPath/start.vmd
+		set vmdCode [calculateProperties ${sim}.$topType ${sim}.$trajType]
+
+    	# Interpret $vmdCode as an aborted||successfull vmd operation
+		if {$vmdCode == [catch error]} {
+    		puts $logFile "SimId\t$sim\taborted\t\t[::pfoundBasic::timeFormat]"
+			
+			# moves simId files to not-processed dir
+			set foo [catch {file delete -force ${notProcessedPath}/$sim}]
+			file copy -force ${processedPath}/$sim ${notProcessedPath}
+			file delete -force ${processedPath}/$sim
+		} else {
+    		puts $logFile \
+				"SimId\t$sim\tsuccessfull\t[::pfoundBasic::timeFormat]"
+		}
+		unset ::pfoundBasic::topType
+		unset ::pfoundBasic::trajType
+    } else {
+		puts $logFile "SimId\t$sim\taborted\t\t[::pfoundBasic::timeFormat]"
+    }
+    flush $cronFile
+    flush $logFile
+
+	# Changing relevant file permissions - this is a work around
+	# deals with  vmd produced files
+	#set relevantFiles [glob ${processedPath}/${sim}/${sim}.*]
+	# deals with log files
+	#set relevantFiles [concat $relevantFiles [glob ${logsPath}/${sim}.*]]
+	#foreach item $relevantFiles { 
+	#	file attributes $item -permissions rw-rw-r-- }
+}
+
+################################################################################
+# Terminating executation of pfound.cron by VMD				       #
+# Changing relevant file permissions - this is a work around		       #
+################################################################################
+puts  $cronFile [::pfoundBasic::endCronTime]
+close $logFile
+close $cronFile

@@ -1,0 +1,5 @@
+# min(0-59)  hours(0-23) day(1-31) month(1-12) dow(0-7)   command
+
+VMD=/opt/bin/vmd
+PFOUND=/home/nferreira/pfound
+* * * * *	$VMD -dispdev text -startup $PFOUND/scripts/vmd.rc -args $PFOUND -eofexit < $PFOUND/scripts/pfound.cron > $PFOUND/cron.log

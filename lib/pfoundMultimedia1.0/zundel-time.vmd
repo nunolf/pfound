@@ -1,0 +1,50 @@
+#$Id: zundel-time.vmd,v 1.1 2003/07/16 13:29:12 wwwadmin Exp $
+################################
+# load the molecule
+mol new {zundel.xyz} type xyz 
+mol addfile {zundel.dcd} type dcd waitfor all
+# delete default representation
+mol delrep 0 top
+# bonds
+mol representation DynamicBonds  1.3 0.1 10
+mol color Name
+mol selection {not name X}
+mol material Opaque
+mol addrep top
+# atoms
+mol representation VDW  0.3 15
+mol color Name
+mol selection {not name X}
+mol material Opaque
+mol addrep top
+# wannier centers
+mol representation VDW  0.15 12
+mol color ColorId 15
+mol selection {name X}
+mol material Glass
+mol addrep top
+mol rename top {Zundel Ion}
+
+set viewpoints([molinfo top]) {{{1.000000 0.000000 0.000000 -7.941207} {0.000000 1.000000 0.000000 -7.643198} {0.000000 0.000000 1.000000 -7.159153} {0.000000 0.000000 0.000000 1.000000}} {{0.764649 0.032597 -0.643623 0.000000} {0.626182 0.198514 0.753978 0.000000} {0.152345 -0.979556 0.131382 0.000000} {0.000000 0.000000 0.000000 1.000000}} {{0.538716 0.000000 0.000000 0.000000} {0.000000 0.538716 0.000000 0.000000} {0.000000 0.000000 0.538716 0.000000} {0.000000 0.000000 0.000000 1.000000}} {{1.000000 0.000000 0.000000 0.140000} {0.000000 1.000000 0.000000 -0.060000} {0.000000 0.000000 1.000000 0.000000} {0.000000 0.000000 0.000000 1.000000}}}
+
+lappend viewplist [molinfo top]
+set topmol [molinfo top]
+# done with molecule 0
+foreach v $viewplist {
+  molinfo $v set {center_matrix rotate_matrix scale_matrix global_matrix} $viewpoints($v)
+}
+unset viewplist
+mol top $topmol
+unset topmol
+  
+##############################
+# function to draw the time bar with required options
+proc do_time {args} {
+# see source for explanations of the options  
+   display_time_bar 1.0 50.0 "fs" 0
+}
+
+# connect do_time to vmd_frame
+trace variable vmd_frame(0) w do_time
+
+animate goto 0

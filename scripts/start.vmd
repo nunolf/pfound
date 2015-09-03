@@ -1,0 +1,163 @@
+################################################################################
+## start.vmd -- procedure calculateProperties				  			      ##
+################################################################################
+## Survey:								    								  ##
+## This is the main procedure.											      ##
+##									     									  ##
+## If there's a topology||coordinate & trajectory for simID X,			      ##
+## then this file will be sourced and called from the main		     		  ##
+## batch script pfound.cron.						     					  ##
+##									      									  ##
+## The proc will start to upload the topology/coordinate and		  	      ##
+## then the trajectory. Then, it starts to calculate all		  		      ##
+## properties implemented on the procedure.			     	     			  ##
+##									     									  ##
+## If an error is caught during the proc executation, the error		    	  ##
+## is catched and written on the $cronLog. Proc returns 1 to		   		  ##
+## the main batch script, otherwise returns 0.				    			  ##
+################################################################################
+## 2do: not all desired properties/features are implemented				      ##
+##      (generate movies, write a single pdb, convert trajectories ...)       ##
+################################################################################
+## File location: $pfound/scripts					     					  ##
+################################################################################
+## Author: Nuno Loureiro-Ferreira / nunolf (at) ci uc pt				      ##
+##									   										  ##
+## Acknowledgments: John Stone / johns (at)				   					  ##
+##									     									  ##
+## 11 Dez 2006 file version 1.0						   						  ##
+################################################################################
+
+################################################################################
+# Procedure that calls all property procs				     				   #
+################################################################################
+
+proc calculateProperties {topology trajectory} {
+
+    global outExt
+    global env
+    global dataBasename
+
+	# Deletes files that warn the DW of a successfull/aborted condition
+ 	set foo [catch {file delete -force "${::logsPath}/${::sim}.debug"}]
+	set foo [catch {file delete -force "${::logsPath}/${::sim}.aborted"}]
+	set foo [catch {file delete -force "${::logsPath}/${::sim}.success"}]
+
+    # This allows the proc to terminate as soon as
+    # an error is catched while the commands inside
+    # the if clause are being interpreted
+    if {[catch {
+
+		# Example of how to check execution time
+		# Time is measured in elapsed time, not CPU time.
+		#set cmd {::pfoundBasic::loadTraj $topology $trajectory}
+		#puts $::cronFile "loadTraj: [time {eval $cmd}]"
+
+		# Defines the simId basename being processed
+		set dataBasename [file rootname $topology]
+
+   		 # Deletes vmd loaded molecules
+		::pfoundBasic::deleteMolecules
+
+		# Loads the trajectory
+		eval {::pfoundBasic::loadTraj $topology $trajectory}
+
+		# testing orient package on a single snapshot
+#		::pfoundMultimedia::genSnapshot
+
+		# Writes the first frame of the trajectory to a pdb
+		eval {::pfoundMultimedia::writePdb $dataBasename}
+
+		# Produces an animated gif for the first traj frame
+		eval {::pfoundMultimedia::genMovie $dataBasename \
+                                           "rotation" "imgif" "tachyon"}
+
+		# Get some protein information
+		eval {::pfoundBasic::infoMolecule $dataBasename}
+
+		# Calculates gyration radius
+		set outExt rgyr
+		eval {::pfoundBasic::calcRgyr "backbone" ${dataBasename}.$outExt}
+		eval {::pfoundBasic::xyToGrace ${dataBasename}.$outExt}
+
+		# Calculates RMSD
+		set outExt rmsd
+		eval {::pfoundBasic::calcRmsd "backbone" ${dataBasename}.$outExt}
+    	eval {::pfoundBasic::xyToGrace ${dataBasename}.$outExt}
+	
+		# Produces an animated gif for the trajectory
+		eval {::pfoundMultimedia::genMovie $dataBasename \
+											"trajectory" "imgif" "tachyon"}
+
+		# Produces a mpeg movie for the trajectory
+		eval {::pfoundMultimedia::genMovie $dataBasename \
+		                                   "trajectory" "ppmtompeg" "tachyon"}
+
+		# Calculates RMSF
+		set outExt rmsf
+		eval {::pfoundBasic::calcRmsf "name CA" ${dataBasename}.$outExt 0}
+		eval {::pfoundBasic::xyToGrace ${dataBasename}.$outExt}
+
+   		# Calculates the secondary structure (stride)
+		eval {::pfoundBasic::calcSsTrans $dataBasename protein}
+
+		# Calculates the native contacts
+		eval {::pfoundBasic::calcNatContacts protein $dataBasename}
+		eval {::pfoundBasic::xyToGrace ${dataBasename}.nc}
+
+		# Calculates residue SASA (naccess)
+		eval {::pfoundBasic::calcSasa $dataBasename}
+		eval {::pfoundBasic::xyToGrace ${dataBasename}.sasa_aa}
+		eval {::pfoundBasic::xyToGrace ${dataBasename}.sasa_anp}
+		eval {::pfoundBasic::xyToGrace ${dataBasename}.sasa_ap}
+
+### Stuff being implemented ###
+
+		# Calculates number of residues on each SS
+		#eval {::pfoundBasic::calcSsCounts $dataBasename}
+		#eval {::pfoundBasic::xyToGrace ${dataBasename}.ssc}
+
+		# Calculates hydrogen-bonds
+		#set outExt hb
+		#eval {::pfoundBasic::calcHb ${dataBasename}.$outExt}
+		#eval {::pfoundBasic::xyToGrace ${dataBasename}.$outExt}
+
+		# Calculates persistence of native hydrogen-bonds
+		#eval {::pfoundBasic::calcHbNativeTrans $dataBasename}
+		#eval {::pfoundBasic::xyToGrace ${dataBasename}.nhb}
+	
+		# Calculates a distance map
+		#eval {::pfoundBasic::distMap protein $dataBasename 0}
+	
+    } result]} {
+		variable errorInfo
+		puts $::cronFile "\n*** Tcl Trace start ***"
+		puts $::cronFile $errorInfo
+		puts $::cronFile "*** Tcl Trace end ***"
+
+		puts $::errFile "*** Tcl Trace start ***"
+		puts $::errFile "SimId\t$::sim\taborted\n[::pfoundBasic::timeFormat]"
+		puts $::errFile $errorInfo
+		puts $::errFile "*** Tcl Trace end ***\n"
+
+		# informs the DW of an aborted computation
+	    set aFile [open ${::logsPath}/${::sim}.aborted w]
+	    close $aFile
+
+		# writes a debug file for simid
+		set eFile [open ${::logsPath}/${::sim}.debug w]
+		puts $eFile "*** Tcl Trace start ***"
+		puts $eFile "SimId\t$::sim\taborted\n[::pfoundBasic::timeFormat]"
+		puts $eFile $errorInfo
+		puts $eFile "*** Tcl Trace end ***\n"
+		close $eFile
+		return 1
+    } else {
+		puts $::cronFile "No catched errors!"
+		
+		# informs the DW of a successful condition
+		set sFile [open ${::logsPath}/${::sim}.success w]
+	    close $sFile
+		return 0
+    }
+}

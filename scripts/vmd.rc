@@ -1,0 +1,45 @@
+################################################################################
+## vmd.rc 																	  ##
+################################################################################
+## DESCRIPTION:																  ##
+##                                                                            ##
+## VMD startup script. These commands are executed as soon as VMD starts up   ##
+################################################################################
+## File location: $pfound/scripts											  ##
+################################################################################
+## Author: Nuno Loureiro-Ferreira / nunolf (at) ci uc pt					  ##
+##																			  ##
+## 11 Dez 2006 file version 1.0												  ##
+################################################################################
+
+puts "Reading P-found VMD startup file ..."
+logfile console
+
+# turn on lights 0 and 1
+light 0 on
+light 1 on
+light 2 off
+light 3 off
+
+# position the stage and axes
+axes location off
+stage location off
+
+# User's default values for newly loaded molecules/reps, etc
+#
+# mol default category value --> Set the default settings for color, style,
+# 								  selection, or material to the supplied value.
+mol default style {NewCartoon 0.300000 12.000000 4.100000 0}
+mol default color structure
+# mol modstyle rep_number molecule_number rep_style a b c d
+# if rep_style = NewCartoon: 
+#	a = thickness; b = resolution; c = aspect ratio; d = spline style
+#	d = 0 = Catmull-Rom; d = 1 = B spline
+
+# display properties
+display resize 400 400
+display projection orthographic
+color Display Background white
+
+# turn on/off menus
+menu main off

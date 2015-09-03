@@ -1,0 +1,17 @@
+03nov2006 - nunolf
+------------------------
+Note: this is a howto edit the crontab for a user (e.g. pfound)
+
+1 - if the pfound user does not have permition to edit his crontab,
+    ask the admin to give it (play with files cron.allow and cron.deny,
+    usually under /etc)
+    
+2 - edit crontab in the following manner:
+    crontab -u pfound cron.entries
+    or
+    crontab -e, and edit by hand
+    
+    If you issue crontab -r, the crontab will be emptied.
+    Sometimes this is a good idea, in order to have a new clean installed crontable
+    
+    crontab -l will list the current contents of crontable.
